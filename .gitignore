@@ -1,0 +1,6 @@
+# Ignore virtual environment
+     venv/
+     # Ignore password JSON file
+     my_passwords.json
+     # Ignore pycache folders
+     __pycache__/
