@@ -81,7 +81,10 @@ def save():
 		#IMPORTANT
 		try:
 			with open("my_passwords.json", mode="r") as file:
-				data_dict = json.load(file)
+				try:
+					data_dict = json.load(file)
+				except json.JSONDecodeError:
+					data_dict = {}
 		except FileNotFoundError:
 			with open("my_passwords.json", mode="w") as file:
 				json.dump(new_data, file, indent=5)
