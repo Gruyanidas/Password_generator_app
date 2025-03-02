@@ -1,125 +1,123 @@
 from tkinter import *
-import string, random
+import string
+import random
+import json
+import threading
+import subprocess
 from itertools import chain
 from tkinter import messagebox
-import subprocess
-import json
 from data_quotes import quotes
-import threading
 
 #CONSTANTS
 BACKGROUND_COLOR = "#002F5D"
 FOREGROUND_COLOR = "#F23005"
 HIGHLIGHTCOLOR = "#73020C"
+BUTTON_COLOR = "#260101"
 FONT_STYLE = "Satoshi"
 CANVAS_WIDTH = 500
 CANVAS_HEIGHT = 600
-SPACING = 20
-BUTTON_COLOR = "#260101"
-HEADER_DEFAULT = "No more passwords problems!"
+HEADER_DEFAULT = "No more password problems!"
+PASSWORD_FILE = "my_passwords.json"
+HEADER_UPDATE_INTERVAL = 8  # Seconds
 
+# ---------------------------- UPDATE HEADER ------------------------------- #
+def update_header(text=None):
+	"""Updates the header text."""
+	header.config(text=text if text else random.choice(quotes))
+	threading.Timer(HEADER_UPDATE_INTERVAL, update_header).start()
+# ---------------------------- COPY TO CLIPBOARD - FOR LINUX AND WINDOWS USERS ------------------------------- #
+def copy_to_clipboard(text):
+	"""Copies text to clipboard using xclip (Linux/macOS) or pyperclip (Windows)."""
+	try:
+		subprocess.run(['xclip', '-selection', 'clipboard'], input=text.encode(), check=True)
+	except FileNotFoundError:
+		import pyperclip
+		pyperclip.copy(text)
 # ---------------------------- PASSWORD GENERATOR ------------------------------- #
 def generate_password():
 	try:
 		num_input = int(numeric_chars_entry.get().strip())
 		spec_input = int(spec_chars_entry.get().strip())
-
-	except (ValueError, TypeError):
-		header.config(text="Type in valid numbers...")
+	except ValueError:
+		update_header("Type in valid numbers...")
 		return
 
-	header.config(text=f"Password generated with {num_input}"
-					   f" numbers and {spec_input} spec chars...")
+	update_header(f"Password generated with {num_input} numbers and {spec_input} special chars...")
 
-	letters = string.ascii_letters
-	digits = string.digits
-	spec_chars = string.punctuation
-	#PICKING RANDOMS
-	chosen_letters = random.choices(letters, k=6)
-	chosen_digits = random.choices(digits, k=num_input)
-	chosen_spec_chars = random.choices(spec_chars, k=spec_input)
+	chosen_letters = random.choices(string.ascii_letters, k=6)
+	chosen_digits = random.choices(string.digits, k=num_input)
+	chosen_spec_chars = random.choices(string.punctuation, k=spec_input)
 
-	final_sample = list(chain(chosen_letters, chosen_digits,chosen_spec_chars))
-	random.shuffle(final_sample)
-	gener_password = "".join(final_sample)
-	#copying the password to a clipboard automatically
-	subprocess.run(['xclip', '-selection', 'clipboard'], input=gener_password.encode(), check=True)
-	# pyperclip.copy(gener_password) command for windows users
-	#disabling button
+	password = "".join(random.sample(list(chain(chosen_letters, chosen_digits, chosen_spec_chars)),
+									 len(chosen_letters) + num_input + spec_input))
+	copy_to_clipboard(password)
 	generate_button.config(state="disabled")
-	#inserting values
-	password_entry.insert(0, gener_password)
+	password_entry.insert(0, password)
 # ---------------------------- RESETTING THE APP ------------------------------- #
 def reset():
+	for entry in [password_entry, email_entry, website_entry, spec_chars_entry, numeric_chars_entry]:
+		entry.delete(0, END)
 	generate_button.config(state="normal")
-	password_entry.delete(0, END)
-	email_entry.delete(0, END)
-	website_entry.delete(0, END)
-	spec_chars_entry.delete(0, END)
-	numeric_chars_entry.delete(0, END)
-	header.config(text=HEADER_DEFAULT)
+	update_header(HEADER_DEFAULT)
 
 # ---------------------------- SAVE PASSWORD ------------------------------- #
-def save():
-	# getting data from entries
-	website_data = website_entry.get()
-	email_data = email_entry.get()
-	password = password_entry.get()
-	#dict prepared for json to be written
-	new_data = {
-		website_data : {
-			"email" : email_data,
-			"password" : password,
-		}
-	}
+def save_password():
+	"""Saves password info to a JSON file."""
+	website_data = website_entry.get().strip()
+	email_data = email_entry.get().strip()
+	password = password_entry.get().strip()
 
 	if not website_data or not email_data:
 		messagebox.showerror("Empty fields!", "Check and fill in all the fields!")
+		return
 	else:
-		messagebox.askokcancel("Are you fine with this info?", f"You want to save website as {website_data}\n"
+		messagebox.askokcancel("Save confirm", f"You want to save website as {website_data}\n"
 															   f"email as {email_data}\n and password as {password}?")
+
+	#modeled patern of data for JSON
+	new_data = {website_data : {"email" : email_data,
+								"password" : password}}
 		#IMPORTANT
-		try:
-			with open("my_passwords.json", mode="r") as file:
-				try:
-					data_dict = json.load(file)
-				except json.JSONDecodeError:
-					data_dict = {}
-		except FileNotFoundError:
-			with open("my_passwords.json", mode="w") as file:
-				json.dump(new_data, file, indent=5)
-		else: #Else je nastavak od try ako try uspe IMPORTANT
-			data_dict.update(new_data)
+	try:
+		with open("my_passwords.json", mode="r") as file:
+			try:
+				data_dict = json.load(file)
+			except json.JSONDecodeError:
+				data_dict = {}
+	except FileNotFoundError:
+		with open("my_passwords.json", mode="w") as file:
+			json.dump(new_data, file, indent=5)
+	else: #Else block continues if 1st try succeeded IMPORTANT
+		data_dict.update(new_data)
 
-			with open("my_passwords.json", mode="w") as file:
-				json.dump(data_dict, file, indent=5)
+		with open("my_passwords.json", mode="w") as file:
+			json.dump(data_dict, file, indent=5)
 
-		messagebox.showinfo("Data saved!", "You saved data for your new account!")
+	messagebox.showinfo("Data saved!", "You saved data successfully!")
 
 #---------------------------- SEARCH ------------------------------  #
 def search():
+	"""Searches for saved password information"""
 	website_data = website_entry.get().strip()
+
 	try:
 		with open("my_passwords.json", mode="r") as file:
 			dict_data = json.load(file)
-	except FileNotFoundError:
+	except (FileNotFoundError, json.JSONDecodeError):
 		messagebox.showerror("No such a file", "...thus, no data that you are looking for!")
+		return
 	else:
-		if website_data not in dict_data:
+		if any(website_data in key for key in dict_data.keys()):
+			matching_key = [key for key in dict_data.keys() if website_data in key][0]
+			website_entry.delete(0,END)
+			website_entry.insert(0,matching_key)
+			email_data, password = dict_data[matching_key]["email"], dict_data[matching_key]["password"]
+			email_entry.insert(0, email_data)
+			password_entry.insert(0, password)
+			messagebox.showinfo("Success!", "Data successfully retrieved!")
+		else:
 			messagebox.showerror("No data for search term!", "There is no such data!")
 			return
-		email_data = dict_data[website_data]["email"]
-		password = dict_data[website_data]["password"]
-		email_entry.insert(0, email_data)
-		password_entry.insert(0, password)
-		messagebox.showinfo("Success!", "Data successfully retrieved!")
-
-#---------------------------- CHANGE HEADER ------------------------------  #
-def change_header():
-	quote = random.choice(quotes)
-	header.config(text=quote)
-	threading.Timer(8, change_header).start()
-
 # ---------------------------- UI SETUP ------------------------------- #
 
 #APP BODY
@@ -128,7 +126,7 @@ window.title("Personal password generator")
 window.config(width= CANVAS_WIDTH, height=CANVAS_HEIGHT, pady=50, padx=50, bg=BACKGROUND_COLOR)
 
 header = Label(text=HEADER_DEFAULT,
-			   wraplength=400,
+			   wraplength=700,
 			   font=(FONT_STYLE, 16, "italic"),
 			   background=BACKGROUND_COLOR,
 			   foreground=FOREGROUND_COLOR)
@@ -301,7 +299,7 @@ create_file = Button(padx=8, pady=12,
 					 activebackground=HIGHLIGHTCOLOR,
 					 text='Save file',
 					 font=(FONT_STYLE, 10, "bold"),
-					 command=save,
+					 command=save_password,
 					 fg=FOREGROUND_COLOR)
 create_file.grid(column=2, row=7, columnspan=2)
 
@@ -315,8 +313,8 @@ footer.grid(column=1, row=8, columnspan=4, padx=10, pady=20)
 def clean_field(entry):
 	entry.delete(0, END)
 
-spec_chars_entry.bind("<FocusIn>", lambda event: clean_field(spec_chars_entry)) #Event isto reaguje
+spec_chars_entry.bind("<FocusIn>", lambda event: clean_field(spec_chars_entry))
 spec_chars_entry.focus()
 numeric_chars_entry.bind("<FocusIn>", lambda event: clean_field(numeric_chars_entry))
-change_header()
+update_header()
 window.mainloop()
